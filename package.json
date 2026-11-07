@@ -1,6 +1,6 @@
 {
   "name": "@polunzh/dsh-pin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "置顶常用工作区与侧栏插件面板：把它们固定到侧边栏顶部，取消时精确还原。Pin workspaces and sidebar plugin panels to the top of the DSH sidebar, with exact restore on unpin.",
   "type": "module",
   "main": "./lib/index.js",
