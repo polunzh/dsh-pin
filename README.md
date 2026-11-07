@@ -131,8 +131,8 @@ DSH_PIN_LAB_URL="http://127.0.0.1:3091/?token=…" npm run e2e
 ## 发布与 CI
 
 - CI（`.github/workflows/ci.yml`）：`npm test` + `npm run check`（校验提交的 client bundle 与源码同步）。
-- 发布（`.github/workflows/publish.yml`）：push 到 `main` 时，若 `package.json` 的版本还没发布过，就用 npm **trusted publishing（OIDC）** 自动发布；仓库里不存放长期 token。
-- 首次发布一个全新包名需要先用带 scope 写权限的 token 手工 `npm publish --access public` 一次，随后到 npmjs.com 的 package settings 里登记 trusted publisher（repo `polunzh/dsh-pin` + workflow `publish.yml`）。
+- 发布（`.github/workflows/publish.yml`）：push 到 `main` 时，若 `package.json` 的版本还没发布过，就用 npm **trusted publishing（OIDC）** 自动发布；仓库里不存放长期 token。本包已配置好 trusted publisher（repo `polunzh/dsh-pin` + workflow `publish.yml`），bump 版本后 push 即可自动发版。
+- 如需首次接管一个新包名：先用带 scope 写权限的 token 手工 `npm publish --access public` 一次，再运行 `npm trust github <pkg> --file publish.yml --repo polunzh/dsh-pin --allow-publish` 登记 trusted publisher。
 
 ## 许可
 
