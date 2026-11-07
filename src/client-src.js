@@ -173,6 +173,14 @@ function ensureStyles() {
   cursor: default;
   opacity: 0.45;
 }
+/* 工作区行内的置顶按钮：给它与相邻原生按钮一致的 24px 热区与 -4px 负边距，层级置顶 */
+.dsh-pin-button[data-dsh-pin="workspace"] {
+  width: 24px;
+  height: 24px;
+  margin: -4px;
+  position: relative;
+  z-index: 2;
+}
 .dsh-pin-button[data-dsh-pin="panel"] {
   position: absolute;
   z-index: 3;
@@ -185,6 +193,15 @@ function ensureStyles() {
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
+/* 置顶状态的面板：常驻显示置顶按钮，用户一眼看出哪些面板已置顶 */
+.dsh-pin-button[data-dsh-pin="panel"][data-pinned="true"] {
+  opacity: 0.85;
+  pointer-events: auto;
+}
+.dsh-pin-button[data-dsh-pin="panel"][data-pinned="true"]:hover {
+  opacity: 1;
+}
+/* 悬停未置顶面板行时浮现图钉 */
 .dsh-pin-button[data-dsh-pin="panel"][data-dsh-pin-visible="true"],
 .dsh-pin-button[data-dsh-pin="panel"]:focus-visible {
   opacity: 1;
@@ -194,14 +211,34 @@ function ensureStyles() {
 [data-row-key^="workspace:"]:focus-within [class*="rowActions"] {
   display: inline-flex;
 }
+/*
+ * 已置顶工作区的常驻图钉（只读指示器）。
+ *
+ * 位置关键：它与 hover 时浮现的置顶按钮都贴在整行的最右端，所以鼠标移上去时
+ * 图标几乎不动 —— 用户想点这个图钉，落点正好落在随后出现的可点击按钮上。
+ * （早期版本把图钉放在 rowActions 之前，hover 后 rowActions 撑开会把图钉
+ * 往左推 ~50px，鼠标下的元素瞬间换掉，看起来就是“按钮消失/点不到”。）
+ */
 .dsh-pin-marker {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 16px;
+  width: 20px;
   height: 20px;
+  margin: 0 2px 0 0;
   color: var(--dsw-alias-state-business-primary, #4d6bfe);
+  pointer-events: none;
+}
+.dsh-pin-marker svg {
+  fill: currentColor;
+  fill-opacity: 0.16;
+}
+/* hover / 菜单打开 / 键盘聚焦时让位给操作区里的真按钮，避免同时出现两个图钉 */
+[data-row-key^="workspace:"]:hover .dsh-pin-marker,
+[data-row-key^="workspace:"].JoiKIa_menuOpen .dsh-pin-marker,
+[data-row-key^="workspace:"]:focus-within .dsh-pin-marker {
+  display: none;
 }
 ${SELECTOR.rowActions ? "" : ""}
 .dsh-pin-toast {
@@ -374,6 +411,27 @@ function install(ctx) {
     if (pinned) row.setAttribute(ATTR.pinnedWorkspace, id);
     else row.removeAttribute(ATTR.pinnedWorkspace);
 
+    // 两个元素、同一位置：
+    //   常驻指示器 `.dsh-pin-marker`（只读）贴在整行最右端，hover 时让位；
+    //   可点击按钮放在 rowActions 的最后（也是整行最右端），hover 时出现。
+    // 两者右对齐，所以鼠标移到图钉上时图标几乎不动，点击直接命中按钮。
+    const bindPinClick = (node, label) => {
+      node.setAttribute("aria-label", label);
+      node.setAttribute("title", label);
+      node.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        void toggleWorkspace(id, node);
+      };
+      node.onpointerdown = (event) => {
+        event.stopPropagation();
+      };
+      node.onmousedown = (event) => {
+        event.stopPropagation();
+      };
+    };
+
     let marker = row.querySelector(`[${ATTR.marker}="workspace"]`);
     if (pinned) {
       if (!marker) {
@@ -381,13 +439,13 @@ function install(ctx) {
         marker.className = "dsh-pin-marker";
         marker.setAttribute(ATTR.marker, "workspace");
         marker.setAttribute("aria-hidden", "true");
-        marker.appendChild(createPinIcon(13));
-        const actions = row.querySelector(SELECTOR.rowActions);
-        if (actions) row.insertBefore(marker, actions);
-        else row.appendChild(marker);
+        marker.appendChild(createPinIcon(14));
+      }
+      // 永远挂在行的最后（rowActions 之后），保证与按钮同为最右端。
+      if (marker.parentElement !== row || row.lastElementChild !== marker) {
+        row.appendChild(marker);
       }
       marker.setAttribute("title", tr("marker.pinned"));
-      marker.setAttribute("aria-label", tr("marker.pinned"));
     } else if (marker) {
       marker.remove();
     }
@@ -400,17 +458,18 @@ function install(ctx) {
       button.setAttribute(ATTR.pin, "workspace");
       button.setAttribute(ATTR.workspaceId, id);
       button.appendChild(createPinIcon(15));
-      const actions = row.querySelector(SELECTOR.rowActions);
-      // 放在行内操作区的最左侧（"⋯" 与「新会话」图标之前），与应用行内按钮同排。
-      if (actions) actions.insertBefore(button, actions.firstChild);
-      else row.appendChild(button);
-    } else if (button.getAttribute(ATTR.workspaceId) !== id) {
+    }
+    // 放到 rowActions 的最后（最右端），与常驻指示器对齐。
+    const actions = row.querySelector(SELECTOR.rowActions);
+    const targetHost = actions ?? row;
+    if (button.parentElement !== targetHost || targetHost.lastElementChild !== button) {
+      targetHost.appendChild(button);
+    }
+    if (button.getAttribute(ATTR.workspaceId) !== id) {
       button.setAttribute(ATTR.workspaceId, id);
     }
     button.setAttribute("data-pinned", pinned ? "true" : "false");
-    const label = pinned ? tr("action.unpinWorkspace") : tr("action.pinWorkspace");
-    button.setAttribute("aria-label", label);
-    button.setAttribute("title", label);
+    bindPinClick(button, pinned ? tr("action.unpinWorkspace") : tr("action.pinWorkspace"));
     button.setAttribute("aria-pressed", pinned ? "true" : "false");
   }
 
@@ -522,14 +581,26 @@ function install(ctx) {
     );
   }
 
+  function clearHideTimer() {
+    if (hidePanelTimer !== null) {
+      clearTimeout(hidePanelTimer);
+      hidePanelTimer = null;
+    }
+  }
+
   function hidePanelButtons(list, exceptId) {
+    clearHideTimer();
     for (const button of list.querySelectorAll(`[${ATTR.pin}="panel"]`)) {
       const id = button.getAttribute(ATTR.panelId);
-      if (id !== exceptId) button.setAttribute(ATTR.panelButtonVisible, "false");
+      const isPinned = panelPins.includes(id);
+      if (id !== exceptId && !isPinned) {
+        button.setAttribute(ATTR.panelButtonVisible, "false");
+      }
     }
   }
 
   function showPanelButton(list, panelId) {
+    clearHideTimer();
     hidePanelButtons(list, panelId);
     const button = panelButton(list, panelId);
     if (button) button.setAttribute(ATTR.panelButtonVisible, "true");
@@ -553,6 +624,19 @@ function install(ctx) {
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
     button.setAttribute("aria-pressed", pinned ? "true" : "false");
+
+    button.onclick = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      togglePanel(panelId);
+    };
+    button.onpointerdown = (event) => {
+      event.stopPropagation();
+    };
+    button.onmousedown = (event) => {
+      event.stopPropagation();
+    };
 
     const top = row.offsetTop + (row.offsetHeight - PIN_BUTTON_SIZE) / 2;
     if (Number.isFinite(top) && top >= 0) button.style.top = `${top}px`;
@@ -658,26 +742,33 @@ function install(ctx) {
   // ── DOM 事件与观察 ───────────────────────────────────────────────
 
   function onClick(event) {
-    const button = event.target instanceof Element ? event.target.closest(`[${ATTR.pin}]`) : null;
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target ? target.closest(`[${ATTR.pin}], [${ATTR.marker}]`) : null;
     if (!button) return;
-    // 阻止行自身的点击/拖拽/选择逻辑。
+    // 阻止行自身的点击/展开折叠/选择逻辑。
     event.preventDefault();
     event.stopPropagation();
-    if (button.getAttribute(ATTR.pin) === "workspace") {
-      const id = button.getAttribute(ATTR.workspaceId);
+    event.stopImmediatePropagation();
+    const pinKind = button.getAttribute(ATTR.pin) || button.getAttribute(ATTR.marker);
+    if (pinKind === "workspace") {
+      const id =
+        button.getAttribute(ATTR.workspaceId) ||
+        workspaceIdFromRowKey(button.closest(SELECTOR.workspaceRow)?.getAttribute("data-row-key"));
       if (id) {
         void toggleWorkspace(id, button);
       }
-    } else if (button.getAttribute(ATTR.pin) === "panel") {
+    } else if (pinKind === "panel") {
       const id = button.getAttribute(ATTR.panelId);
       if (id) togglePanel(id);
     }
   }
 
   function onPointerDown(event) {
-    const button = event.target instanceof Element ? event.target.closest(`[${ATTR.pin}]`) : null;
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target ? target.closest(`[${ATTR.pin}], [${ATTR.marker}]`) : null;
     if (!button) return;
     event.stopPropagation();
+    event.stopImmediatePropagation();
   }
 
   let hidePanelTimer = null;
@@ -687,10 +778,7 @@ function install(ctx) {
     if (!list || !(event.target instanceof Element)) return;
     const button = event.target.closest(`[${ATTR.pin}="panel"]`);
     if (button) {
-      if (hidePanelTimer !== null) {
-        clearTimeout(hidePanelTimer);
-        hidePanelTimer = null;
-      }
+      clearHideTimer();
       button.setAttribute(ATTR.panelButtonVisible, "true");
       return;
     }
@@ -707,16 +795,16 @@ function install(ctx) {
     const button = event.target.closest(`[${ATTR.pin}="panel"]`);
     if (!row && !button) return;
     const related = event.relatedTarget;
-    if (related instanceof Node && (row?.contains(related) || button?.contains(related))) return;
-    if (row !== null && related instanceof Node) {
-      const relatedButton = related instanceof Element ? related.closest(`[${ATTR.pin}="panel"]`) : null;
-      if (relatedButton) return;
+    if (related instanceof Node) {
+      if (row?.contains(related) || button?.contains(related)) return;
+      if (row && related instanceof Element && related.closest(`[${ATTR.pin}="panel"]`)) return;
+      if (button && related instanceof Element && related.closest(SELECTOR.panelRow)) return;
     }
-    if (hidePanelTimer !== null) clearTimeout(hidePanelTimer);
+    clearHideTimer();
     hidePanelTimer = setTimeout(() => {
       hidePanelTimer = null;
       hidePanelButtons(list, null);
-    }, 160);
+    }, 120);
   }
 
   function onFocusIn(event) {
@@ -750,13 +838,12 @@ function install(ctx) {
   }
 
   function attach() {
-    const nav = sidebarNav();
-    const root = nav ?? document.body;
-    root.addEventListener("click", onClick, true);
-    root.addEventListener("pointerdown", onPointerDown, true);
-    root.addEventListener("pointerover", onPointerOver);
-    root.addEventListener("pointerout", onPointerOut);
-    root.addEventListener("focusin", onFocusIn);
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("mousedown", onPointerDown, true);
+    document.addEventListener("pointerover", onPointerOver);
+    document.addEventListener("pointerout", onPointerOut);
+    document.addEventListener("focusin", onFocusIn);
     observer.observe(document.body, { childList: true, subtree: true });
     schedule();
 
@@ -778,15 +865,13 @@ function install(ctx) {
         clearTimeout(scheduled);
         scheduled = null;
       }
-      if (hidePanelTimer !== null) {
-        clearTimeout(hidePanelTimer);
-        hidePanelTimer = null;
-      }
-      root.removeEventListener("click", onClick, true);
-      root.removeEventListener("pointerdown", onPointerDown, true);
-      root.removeEventListener("pointerover", onPointerOver);
-      root.removeEventListener("pointerout", onPointerOut);
-      root.removeEventListener("focusin", onFocusIn);
+      clearHideTimer();
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("mousedown", onPointerDown, true);
+      document.removeEventListener("pointerover", onPointerOver);
+      document.removeEventListener("pointerout", onPointerOut);
+      document.removeEventListener("focusin", onFocusIn);
       window.removeEventListener("resize", onResize);
       if (typeof unsubscribe === "function") {
         try {

@@ -63,10 +63,14 @@ dsh plugin --profile desktop add link:/path/to/dsh-pin
 
 ## 使用
 
-1. **置顶工作区**：鼠标悬停 Workspaces 里的任意工作区行，行右侧出现 📌 → 点击。该工作区移动到 Workspaces 最上面，标题右侧出现置顶标记。
+1. **置顶工作区**：鼠标悬停 Workspaces 里的任意工作区行，行右侧出现 📌 → 点击。该工作区移动到 Workspaces 最上面。
 2. **置顶插件面板**：悬停左侧「Plugins / Automation tasks / 第三方面板」的任意一行，行右侧出现 📌 → 点击。该面板移动到面板列表顶部。
-3. **取消置顶**：再点一次 📌（工作区也可直接点行右侧的标记）。工作区回到它被置顶前的位置；面板回到注册顺序。
+3. **取消置顶**：再点一次 📌。已置顶的项会常驻一个小图钉（工作区在行尾、面板在行右侧），直接点它也能取消。
 4. 刷新页面 / 重启应用，置顶状态保持。
+
+> 交互细节（1.0.2 修正）：图钉与相邻的原生行内按钮同尺寸（24×24 热区），点击**不会**连带展开/折叠所在的工作区文件夹；
+> 已置顶项的常驻图钉与 hover 时浮现的按钮在同一位置，所以鼠标移到图钉上不会“图标跑掉、点不到”；
+> 已置顶面板的图钉在鼠标移开后保持可见，一眼能看出哪些面板被置顶。
 
 ## 工作原理
 
@@ -105,13 +109,14 @@ lib/client.js            客户端 bundle（由 build 生成，勿手改）
 lib/index.js             宿主半（no-op）
 scripts/build-client.mjs 构建（内联 pin-core + 校验语法）
 test/pin-core.test.mjs   纯逻辑单测（node:test，零依赖）
+test/e2e/pin-interaction.mjs  置顶按钮交互回归测试（可点击性/不消失/不误触）
 docs/API-NOTES.md        DSH 客户端插件 API 契约笔记
 docs/DOM-CONTRACTS.md    侧边栏 DOM / React 契约与 E2E 实验记录
 test/e2e/                CDP 端到端脚本（需要跑着的 DSH 实例）
 ```
 
 ```bash
-npm test          # 纯逻辑单测
+npm test          # 纯逻辑单测（13 项）
 npm run build     # 重新生成 lib/client.js
 npm run check     # 校验 lib/client.js 与源码同步
 ```
@@ -119,8 +124,11 @@ npm run check     # 校验 lib/client.js 与源码同步
 E2E（需要一台跑着的 DSH web 实例 + headless Chrome CDP；会真实点击 📌 并断言顺序/持久化/还原）：
 
 ```bash
-DSH_PIN_LAB_URL="http://127.0.0.1:3091/?token=…" npm run e2e
-# 可覆盖：DSH_PIN_CDP=http://127.0.0.1:9222 DSH_PIN_TARGET=127.0.0.1:3091
+# 侧栏 DOM / 注入契约 / 重排稳定性（37 项）
+DSH_PIN_LAB_URL="http://127.0.0.1:3091/?token=…" npm run test:e2e
+# 置顶按钮可点击性 / 不消失 / 不误触（15 项，1.0.2 修复的回归测试）
+DSH_PIN_LAB_URL="http://127.0.0.1:3091/?token=…" npm run test:pin
+# 可覆盖：DSH_PIN_CDP=http://127.0.0.1:9222
 ```
 
 更多实现细节见：
