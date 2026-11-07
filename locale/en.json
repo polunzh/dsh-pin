@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Pin",
+    "description": "Real pinning for the sidebar: pin Workspaces to the top of the Workspaces list and plugin panels to the top of the panel list, with exact restore on unpin."
+  }
+}

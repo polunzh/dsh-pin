@@ -1,0 +1,5 @@
+# dsh-pin：单行挂载。
+# 宿主侧是 no-op；全部交互（Workspaces 置顶、插件面板置顶）都在浏览器客户端完成。
+- insert:
+    - id: dsh-pin
+      name: '@polunzh/dsh-pin'

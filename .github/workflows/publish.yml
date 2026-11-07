@@ -1,0 +1,53 @@
+name: Test and publish to npm
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      # 不传 registry-url：setup-node 会因此写一行 `_authToken=${NODE_AUTH_TOKEN}`，
+      # 空 token 会让 npm 先走 token 认证再轮到 OIDC，最后回报误导性的 404。
+      # 也不用 cache: npm —— 本包零依赖、没有 lockfile。
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # 可信发布要求 npm CLI >= 11.5.1；Node 22 自带的 10.x 不认识 OIDC。
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@^11.5.1 --no-fund --no-audit && npm --version
+
+      - name: Run tests
+        run: npm test
+
+      - name: Read package version
+        id: package
+        run: echo "version=$(npm pkg get version | tr -d '\"')" >> "$GITHUB_OUTPUT"
+
+      # 首次发布必须用带 scope 写权限的 token 手工完成；之后在 npmjs.com 的
+      # package settings 里登记 trusted publisher（repo + 本 workflow 文件名），
+      # 由 GitHub Actions 的 id-token 换取短时凭据，仓库里不放长期 token。
+      - name: Publish if this version is not already on npm
+        run: |
+          PACKAGE_NAME=$(npm pkg get name | tr -d '"')
+          PACKAGE_VERSION="${{ steps.package.outputs.version }}"
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version >/dev/null 2>&1; then
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published; skipping."
+            exit 0
+          fi
+          npm publish --access public

@@ -1,0 +1,67 @@
+{
+  "name": "@polunzh/dsh-pin",
+  "version": "1.0.0",
+  "description": "置顶常用工作区与侧栏插件面板：把它们固定到侧边栏顶部，取消时精确还原。Pin workspaces and sidebar plugin panels to the top of the DSH sidebar, with exact restore on unpin.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "manifestVersion": 1
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "assets",
+    "docs"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "build": "node scripts/build-client.mjs",
+    "check": "node scripts/build-client.mjs --check",
+    "e2e": "node test/e2e/run.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "plugin",
+    "pin",
+    "pinned",
+    "workspace",
+    "sidebar",
+    "productivity"
+  ],
+  "author": "polunzh (https://github.com/polunzh)",
+  "homepage": "https://github.com/polunzh/dsh-pin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polunzh/dsh-pin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/polunzh/dsh-pin/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
