@@ -36,6 +36,7 @@
 - **📌 Workspaces 置顶**：把工作区钉到 Workspaces 列表最上面，多个置顶按「最近置顶优先」排列。
 - **📌 插件面板置顶**：把侧边栏插件面板（第三方插件的入口行、内置的「Plugins」「Automation tasks」都行）钉到面板列表顶部，其余面板保持注册顺序。
 - **精确还原（多置顶安全）**：取消置顶时按置顶前的相邻锚点插回原位；锚点消失才回退到列表末尾。取消一个不会打乱仍在置顶的其他项。
+- **顺序自愈**：置顶项始终在列表顶部。DSH 新建工作区会把它插到顺序最前面，插件随后把置顶项拉回来，新工作区落在置顶项下面；顺序本来就正确时不发任何请求。
 - **持久化**：工作区顺序写宿主的 Workspaces 注册表（全局生效，所有浏览器/客户端一致）；置顶记录与面板顺序存当前浏览器 localStorage。
 - **跟随主题**：按钮和置顶标记只用 `--dsw-*` design token，深浅色/第三方主题都跟随；窄屏（折叠 rail）自动隐藏面板按钮；触屏（无 hover）常显。
 - **中英文**：走客户端 `locale` 服务注册 `dsh-pin` 字典。
@@ -87,6 +88,7 @@ dsh plugin --profile desktop add link:/path/to/dsh-pin
 
 - 工作区顺序走 DSH 官方 `workspaces.insertBefore(workspaceId, beforeWorkspaceId?)`：与用户拖拽排序同一条通道，宿主持久化、跨客户端生效。
 - 取消置顶的锚点是「置顶前紧跟在它后面的工作区 id」；`insertBefore` 省略锚点即追加到末尾，作为锚点失效时的兜底。
+- 置顶项始终占据列表顶部：宿主新建工作区会插到顺序最前面（`dsh-workspace` 的 `create` 明确如此），插件监听到顺序变化后只把置顶项拉回最前，并保持置顶项之间、其余工作区之间的相对顺序。
 - 插件面板顺序按 `ctx.slots.entriesOfSlot("sidebar.panellist")` 的注册 `order` 还原，所以取消置顶后其他面板顺序不会乱。
 - React 会重渲染侧边栏：插件用 `MutationObserver` 兜底重新注入按钮、重放面板顺序，并把置顶状态同步到行属性上。
 - 记录键：`dsh-pin.workspaces.v1`（工作区置顶记录）、`dsh-pin.panels.v1`（面板置顶顺序）。
@@ -96,9 +98,10 @@ dsh plugin --profile desktop add link:/path/to/dsh-pin
 - 仅 **Web GUI / Desktop 的 Web 渲染层** 可用；TUI / headless 没有侧边栏，插件不生效。
 - 「未分组（Ungrouped）」不是真实工作区，不支持工作区置顶（也没有可持久化的顺序）。
 - 工作区顺序是**宿主全局**的；面板顺序和置顶记录是**每浏览器本地**的（DSH 没有「面板置顶」的宿主概念）。
+- 置顶项固定在最顶部：把置顶项拖到下面会被自动拉回，想换位置请先取消置顶。
 - 平铺/树形等视图切换不影响工作区顺序，但工作区的**组内**显示顺序仍由 DSH 自身的排序模式决定。
 - 依赖应用内部 DOM 结构（`data-row-key`、`panelRow`、React fiber 取面板 id）。DSH 大版本升级后如果结构变化，按钮可能暂时失效 —— 升级/适配后即可恢复，不会破坏应用本身。
-- 调试：客户端暴露只读诊断钩子 `window.__dshPin`（`workspaceOrder()`、`workspaceRecords`、`panelPins`、`lastError`）。
+- 调试：客户端暴露只读诊断钩子 `window.__dshPin`（`workspaceOrder()`、`workspaceRecords`、`panelPins`、`lastError`、`reassertPins()`）。
 
 ## 开发
 

@@ -4,7 +4,7 @@
 > `http://127.0.0.1:3091`（profile `pin-lab`）+ headless Chrome CDP 上实测，测量时间
 > 2026-11-07 13:43–14:05（Asia/Shanghai）。可复跑的断言脚本见 `test/e2e/run.mjs`。
 
-## 0. TL;DR（给实现者的 6 条硬结论）
+## 0. TL;DR（给实现者的 7 条硬结论）
 
 1. **选择器稳定**：`nav[class*="panelList"]`、`button[class*="panelRow"]`（需排除
    `[aria-haspopup]` 的 More）、`[data-row-key^="workspace:"]`、`[data-row-key^="session:"]`
@@ -25,6 +25,11 @@
 6. **注入节点用 `data-*` 表达状态**：React 会重写 `className`（实测：手动加的 class
    在一次面板切换后丢失），但不会清除它不管理的 `data-*` 属性；行内追加的按钮在
    普通重渲染中存活（同一 DOM 节点），随行卸载而消失。
+7. **新建工作区会插到持久顺序最前面**：`dsh-workspace` 的 `create` 源码注释写明
+   "A newly created workspace is prepended to the durable registry order"，客户端
+   `ClientWorkspaceModel.upsert` 同样把新行放在 `items[0]`。因此「置顶」不能只在点击时
+   移动一次：顺序变化后必须把置顶项重新拉回最前（`planPinRestore`），否则新工作区会
+   出现在置顶项上面。宿主顺序是唯一事实来源，插件只按置顶记录纠偏。
 
 ## 1. 环境与版本
 

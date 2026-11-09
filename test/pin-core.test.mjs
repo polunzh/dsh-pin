@@ -3,9 +3,11 @@ import { test } from "node:test";
 
 import {
   findWorkspaceRecord,
+  orderWithPinnedFirst,
   parsePanelPins,
   parseWorkspaceRecords,
   planPanelOrder,
+  planPinRestore,
   planPinWorkspace,
   planUnpinWorkspace,
   prunePanelPins,
@@ -18,6 +20,26 @@ import {
 } from "../lib/pin-core.mjs";
 
 const ORDER = ["w-a", "w-b", "w-c", "w-d"];
+
+/** 按宿主 insertBefore 语义依次执行移动序列，返回结果顺序。 */
+function applyMoves(order, moves) {
+  let current = [...order];
+  for (const move of moves) {
+    const without = current.filter((id) => id !== move.workspaceId);
+    const at = without.indexOf(move.beforeId);
+    assert.notEqual(at, -1, `beforeId ${move.beforeId} missing`);
+    current = [...without.slice(0, at), move.workspaceId, ...without.slice(at)];
+  }
+  return current;
+}
+
+/** 生成排列，用于穷举验证。 */
+function permutations(list) {
+  if (list.length <= 1) return [list];
+  return list.flatMap((id, index) =>
+    permutations([...list.slice(0, index), ...list.slice(index + 1)]).map((rest) => [id, ...rest]),
+  );
+}
 
 test("planPinWorkspace moves the target before the current first workspace", () => {
   const plan = planPinWorkspace({ order: ORDER, workspaceId: "w-c", now: 42 });
@@ -165,6 +187,78 @@ test("planPanelOrder leads pinned panels by pin recency, preserving the rest", (
   // 失效置顶 id 直接忽略。
   assert.deepEqual(planPanelOrder(["a", "b"], ["gone"]), ["a", "b"]);
   assert.deepEqual(planPanelOrder([], ["a"]), []);
+});
+
+test("planPinRestore lifts a pinned workspace back above a newly created one", () => {
+  // 宿主新建工作区会插到持久顺序最前：置顶项被挤到第二位。
+  const order = ["w-new", "w-a", "w-b", "w-c"];
+  const moves = planPinRestore({ order, pinnedIds: ["w-a"] });
+  assert.deepEqual(moves, [{ workspaceId: "w-a", beforeId: "w-new" }]);
+  assert.deepEqual(applyMoves(order, moves), ["w-a", "w-new", "w-b", "w-c"]);
+});
+
+test("planPinRestore does nothing when pinned workspaces already lead", () => {
+  assert.deepEqual(planPinRestore({ order: ["w-a", "w-new", "w-b"], pinnedIds: ["w-a"] }), []);
+  assert.deepEqual(planPinRestore({ order: ORDER, pinnedIds: [] }), []);
+  assert.deepEqual(planPinRestore({ order: [], pinnedIds: ["w-a"] }), []);
+});
+
+test("planPinRestore ignores pinned ids that no longer exist", () => {
+  assert.deepEqual(planPinRestore({ order: ORDER, pinnedIds: ["gone"] }), []);
+  // 存活置顶项照常恢复，失效 id 不影响。
+  const order = ["w-new", "w-a", "w-b"];
+  assert.deepEqual(applyMoves(order, planPinRestore({ order, pinnedIds: ["gone", "w-a"] })), [
+    "w-a",
+    "w-new",
+    "w-b",
+  ]);
+});
+
+test("planPinRestore keeps the pinned block in its current relative order", () => {
+  // 两个置顶项被新工作区挤下去：w-b 在 w-a 前面（与点击顺序无关，尊重当前顺序）。
+  const order = ["w-new", "w-b", "w-a", "w-c", "w-d"];
+  const moves = planPinRestore({ order, pinnedIds: ["w-a", "w-b"] });
+  assert.deepEqual(applyMoves(order, moves), ["w-b", "w-a", "w-new", "w-c", "w-d"]);
+  assert.ok(moves.length <= 2, `moves=${JSON.stringify(moves)}`);
+});
+
+test("planPinRestore pulls a pinned workspace back from below unpinned ones", () => {
+  const order = ["w-b", "w-c", "w-a"];
+  const moves = planPinRestore({ order, pinnedIds: ["w-a"] });
+  assert.deepEqual(applyMoves(order, moves), ["w-a", "w-b", "w-c"]);
+});
+
+test("planPinRestore converges for every order of four workspaces", () => {
+  const ids = ["w-a", "w-b", "w-c", "w-d"];
+  const pinSets = [[], ["w-a"], ["w-b", "w-d"], ["w-a", "w-b"], ids];
+  for (const order of permutations(ids)) {
+    for (const pinnedIds of pinSets) {
+      const moves = planPinRestore({ order, pinnedIds });
+      const applied = applyMoves(order, moves);
+      const label = JSON.stringify({ order, pinnedIds, moves });
+      assert.deepEqual(applied, orderWithPinnedFirst({ order, pinnedIds }), label);
+      const live = order.filter((id) => pinnedIds.includes(id));
+      assert.ok(moves.length <= live.length, label);
+      // 修好之后不需要再动。
+      assert.deepEqual(planPinRestore({ order: applied, pinnedIds }), [], label);
+    }
+  }
+});
+
+test("planPinRestore respects an explicit move limit", () => {
+  const order = ["w-new", "w-c", "w-b", "w-a"];
+  const moves = planPinRestore({ order, pinnedIds: ["w-a", "w-b", "w-c"], limit: 1 });
+  assert.equal(moves.length, 1);
+});
+
+test("orderWithPinnedFirst preserves the pinned block and the rest", () => {
+  assert.deepEqual(orderWithPinnedFirst({ order: ["x", "p2", "y", "p1"], pinnedIds: ["p1", "p2"] }), [
+    "p2",
+    "p1",
+    "x",
+    "y",
+  ]);
+  assert.deepEqual(orderWithPinnedFirst({ order: ["a", "b"], pinnedIds: [] }), ["a", "b"]);
 });
 
 test("workspaceIdFromRowKey parses only workspace keys", () => {

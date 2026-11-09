@@ -23,6 +23,8 @@ const STYLE_ID = "dsh-pin-style";
 const PIN_BUTTON_SIZE = 20;
 const PANEL_BUTTON_OFFSET = 6;
 const OBSERVE_DEBOUNCE_MS = 120;
+/** 自愈移动失败后的冷却时间：避免宿主持续拒绝时反复打 RPC。 */
+const PIN_RESTORE_COOLDOWN_MS = 5000;
 
 const SELECTOR = {
   panelList: '[class*="panelList"]',
@@ -45,10 +47,18 @@ const ATTR = {
   panelButtonVisible: "data-dsh-pin-visible",
 };
 
-const PIN_PATHS = [
-  "M12 17v4.2",
-  "M8.6 10.9a2 2 0 0 1-1.1 1.8l-1.2.6A2 2 0 0 0 5.2 15v.6a1 1 0 0 0 1 1h11.6a1 1 0 0 0 1-1V15a2 2 0 0 0-1.1-1.7l-1.2-.6a2 2 0 0 1-1.1-1.8V7.2a1 1 0 0 1 1-1 1.6 1.6 0 0 0 0-3.2H8.6a1.6 1.6 0 0 0 0 3.2 1 1 0 0 1 1 1v3.7Z",
-];
+/*
+ * 图钉图形直接取自 DSH 原生图标集（@deepseek-ai/dsh-client-ui-primitives 的
+ * IconPinOutlineRegular / IconPinFillRegular，16×16，regular 线宽 1）：
+ * 未置顶=空心针头，置顶=同一针头填实。这样插件注入的图钉和系统会话行的
+ * 「置顶会话」按钮看起来是同一个图标，而不是自绘的直立图钉。
+ */
+const PIN_ICON = {
+  viewBox: "0 0 16 16",
+  strokeWidth: "1",
+  head: "M9.96976 1.70572L13.1554 3.93629L10.9019 8.12317L11.5158 11.605L10.7192 12.7427L2.52767 7.00693L3.3243 5.86922L6.80612 5.25528L9.96976 1.70572Z",
+  tail: "M6.05285 9.47511C6.27284 9.16094 6.70586 9.08458 7.02003 9.30457C7.3342 9.52455 7.41055 9.95757 7.19057 10.2717L3.98587 14.4708L3.21223 13.9291L6.05285 9.47511Z",
+};
 
 // ── 文案 ──────────────────────────────────────────────────────────────
 
@@ -110,22 +120,33 @@ function sameArray(a, b) {
 }
 
 function createPinIcon(size) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", PIN_ICON.viewBox);
   svg.setAttribute("width", String(size));
   svg.setAttribute("height", String(size));
   svg.setAttribute("fill", "none");
   svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "1.7");
-  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-width", PIN_ICON.strokeWidth);
   svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
-  for (const d of PIN_PATHS) {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", d);
-    svg.appendChild(path);
-  }
+
+  // 针头：默认只描边（等同 IconPinOutlineRegular），置顶时由 CSS 填实（IconPinFillRegular）。
+  const head = document.createElementNS(svgNS, "path");
+  head.setAttribute("class", "dsh-pin-head");
+  head.setAttribute("d", PIN_ICON.head);
+  head.setAttribute("stroke", "currentColor");
+  head.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(head);
+
+  // 针尾：原生图标里始终是实心填充。
+  const tail = document.createElementNS(svgNS, "path");
+  tail.setAttribute("class", "dsh-pin-tail");
+  tail.setAttribute("d", PIN_ICON.tail);
+  tail.setAttribute("fill", "currentColor");
+  svg.appendChild(tail);
+
   return svg;
 }
 
@@ -148,7 +169,7 @@ function ensureStyles() {
   background: transparent;
   color: var(--dsw-alias-label-tertiary, #8b8f96);
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 1;
   transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 .dsh-pin-button:hover {
@@ -165,9 +186,8 @@ function ensureStyles() {
   color: var(--dsw-alias-state-business-primary, #4d6bfe);
   opacity: 1;
 }
-.dsh-pin-button[data-pinned="true"] svg {
+.dsh-pin-button[data-pinned="true"] .dsh-pin-head {
   fill: currentColor;
-  fill-opacity: 0.16;
 }
 .dsh-pin-button:disabled {
   cursor: default;
@@ -230,9 +250,8 @@ function ensureStyles() {
   color: var(--dsw-alias-state-business-primary, #4d6bfe);
   pointer-events: none;
 }
-.dsh-pin-marker svg {
+.dsh-pin-marker .dsh-pin-head {
   fill: currentColor;
-  fill-opacity: 0.16;
 }
 /* hover / 菜单打开 / 键盘聚焦时让位给操作区里的真按钮，避免同时出现两个图钉 */
 [data-row-key^="workspace:"]:hover .dsh-pin-marker,
@@ -313,6 +332,15 @@ function install(ctx) {
   let workspaceRecords = parseWorkspaceRecords(readStorage(STORAGE_WORKSPACES));
   /** @type {string[]} */
   let panelPins = parsePanelPins(readStorage(STORAGE_PANELS));
+
+  // 置顶顺序自愈的状态：
+  // workspaceMoveBusy  用户触发的 pin/unpin 移动执行中，自愈让路，避免重复移动；
+  // pinRestoreRunning  自愈移动执行中，防止并发重入；
+  // pinRestoreCooldownUntil 自愈失败后的冷却，避免持续打 RPC。
+  let workspaceMoveBusy = false;
+  let pinRestoreRunning = false;
+  let pinRestoreCooldownUntil = 0;
+  let lastError = null;
 
   const saveWorkspaceRecords = () => {
     writeStorage(STORAGE_WORKSPACES, serializeWorkspaceRecords(workspaceRecords));
@@ -457,7 +485,7 @@ function install(ctx) {
       button.className = "dsh-pin-button";
       button.setAttribute(ATTR.pin, "workspace");
       button.setAttribute(ATTR.workspaceId, id);
-      button.appendChild(createPinIcon(15));
+      button.appendChild(createPinIcon(14));
     }
     // 放到 rowActions 的最后（最右端），与常驻指示器对齐。
     const actions = row.querySelector(SELECTOR.rowActions);
@@ -491,6 +519,46 @@ function install(ctx) {
     }
   }
 
+  // ── 置顶顺序自愈 ─────────────────────────────────────────────────
+  /**
+   * 宿主新建工作区时会把它插到持久顺序最前面（`dsh-workspace` 的 `create` 注释原文：
+   * "A newly created workspace is prepended to the durable registry order"），
+   * 于是之前置顶的工作区会被挤到它下面。这里在顺序变化后把置顶项拉回最前：
+   * 只移动置顶项，保持它们之间以及其余工作区的相对顺序，移动次数不超过置顶数。
+   *
+   * 这是一次「纠偏」而不是每次渲染都重排：顺序已经正确时直接返回，不发 RPC。
+   */
+  async function restorePinnedPrefix() {
+    if (pinRestoreRunning || workspaceMoveBusy) return;
+    if (Date.now() < pinRestoreCooldownUntil) return;
+    if (typeof workspacesService.insertBefore !== "function") return;
+    const pinnedIds = workspaceRecords.map((record) => record.workspaceId);
+    if (pinnedIds.length === 0) return;
+    if (planPinRestore({ order: workspaceOrder(), pinnedIds }).length === 0) return;
+
+    pinRestoreRunning = true;
+    try {
+      // 一次只执行一步、每步重读宿主顺序：和用户拖拽、其他客户端并发时也能收敛。
+      for (let step = 0; step < pinnedIds.length + 1; step += 1) {
+        const order = workspaceOrder();
+        const moves = planPinRestore({ order, pinnedIds });
+        if (moves.length === 0) return;
+        const move = moves[0];
+        await workspacesService.insertBefore(move.workspaceId, move.beforeId);
+        if (sameArray(order, workspaceOrder())) {
+          // 宿主没接受这次移动（锚点刚消失等）：先停手，冷却后再试，避免死循环。
+          pinRestoreCooldownUntil = Date.now() + PIN_RESTORE_COOLDOWN_MS;
+          return;
+        }
+      }
+    } catch (error) {
+      pinRestoreCooldownUntil = Date.now() + PIN_RESTORE_COOLDOWN_MS;
+      lastError = String((error && error.message) || error);
+    } finally {
+      pinRestoreRunning = false;
+    }
+  }
+
   async function toggleWorkspace(workspaceId, button) {
     if (button.disabled) return;
     const order = workspaceOrder();
@@ -502,6 +570,15 @@ function install(ctx) {
     const title = workspaceTitles().get(workspaceId) || (row ? workspaceRowTitle(row) : "");
     const record = findWorkspaceRecord(workspaceRecords, workspaceId);
     button.disabled = true;
+    // 用户触发的移动执行期间，顺序自愈让路，避免对同一次移动重复发 RPC。
+    const move = async (beforeId) => {
+      workspaceMoveBusy = true;
+      try {
+        await workspacesService.insertBefore(workspaceId, beforeId);
+      } finally {
+        workspaceMoveBusy = false;
+      }
+    };
     try {
       if (record !== null) {
         const plan = planUnpinWorkspace({ order, workspaceId, record });
@@ -509,7 +586,7 @@ function install(ctx) {
         saveWorkspaceRecords();
         syncWorkspaceRows();
         if (plan !== null && plan.move) {
-          await workspacesService.insertBefore(workspaceId, plan.beforeId);
+          await move(plan.beforeId);
         }
         toast(tr("toast.unpinnedWorkspace", { title }));
       } else {
@@ -522,7 +599,7 @@ function install(ctx) {
         saveWorkspaceRecords();
         syncWorkspaceRows();
         if (plan.move) {
-          await workspacesService.insertBefore(workspaceId, plan.beforeId);
+          await move(plan.beforeId);
         }
         toast(tr("toast.pinnedWorkspace", { title }));
       }
@@ -540,6 +617,8 @@ function install(ctx) {
     } finally {
       button.disabled = false;
       syncWorkspaceRows();
+      // 宿主顺序可能和置顶记录不一致（并发 / 失败回滚），再纠一次偏。
+      void restorePinnedPrefix();
     }
   }
 
@@ -841,8 +920,6 @@ function install(ctx) {
     if (id !== null) showPanelButton(list, id);
   }
 
-  let lastError = null;
-
   const observer = new MutationObserver(() => {
     schedule();
   });
@@ -859,6 +936,8 @@ function install(ctx) {
         lastError = String((error && error.stack) || error);
         /* 一次同步失败不致命，下一次 DOM 变更会重试 */
       }
+      // DOM 同步之外单独纠偏：新工作区插入后把置顶项拉回最前。
+      void restorePinnedPrefix();
     }, OBSERVE_DEBOUNCE_MS);
   }
 
@@ -875,7 +954,11 @@ function install(ctx) {
     let unsubscribe = null;
     try {
       if (workspacesService.list && typeof workspacesService.list.subscribe === "function") {
-        unsubscribe = workspacesService.list.subscribe(() => schedule());
+        // 置顶项被挤下去时立刻纠偏（不经 120ms 的 DOM 防抖），减少「新工作区闪在最上面」。
+        unsubscribe = workspacesService.list.subscribe(() => {
+          schedule();
+          void restorePinnedPrefix();
+        });
       }
     } catch {
       /* 没有订阅能力也不影响按钮刷新 */
@@ -939,6 +1022,11 @@ function install(ctx) {
       resync() {
         syncWorkspaceRows();
         syncPanels();
+        void restorePinnedPrefix();
+      },
+      /** 手动触发一次置顶顺序纠偏（返回结果 promise，测试用）。 */
+      reassertPins() {
+        return restorePinnedPrefix();
       },
       get lastError() {
         return lastError;
