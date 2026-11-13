@@ -38,6 +38,7 @@ The button matches the native row buttons (24×24 hit area) and never opens or c
 | Workspace pin state | none | persisted, exact restore |
 | Session pin | `pinnedSessionIds` | left alone |
 | Panel `order` | fixed at registration | pin to top, ordered per browser |
+| Panel pin/unpin | native hover pin (sends the panel to "More") | replaced: native pin hidden, dsh-pin's pin pins to top |
 
 ## How it works
 
@@ -45,6 +46,7 @@ The button matches the native row buttons (24×24 hit area) and never opens or c
 - Unpinning inserts the item before the workspace that used to follow it; a missing anchor falls back to the end of the list.
 - New workspaces are created at the head of the registry. The plugin watches order changes and pulls pins back up, leaving the remaining order alone.
 - Panel order is DOM-only: rows get reordered and the order recorded under `dsh-pin.panels.v1`, with unpin restoring slot registration order.
+- Newer DSH builds ship their own panel unpin pin (a gray filled pin shown on row hover). dsh-pin hides it and draws its own pin, so each row shows a single pin that turns accent-blue when pinned.
 - A `MutationObserver` re-injects buttons after React re-renders and replays panel order.
 - The host half is a no-op; all logic lives in `lib/client.js`.
 
@@ -54,7 +56,7 @@ The button matches the native row buttons (24×24 hit area) and never opens or c
 - "Ungrouped" is not a real workspace and cannot be pinned.
 - Workspace order is global to the host; panel order is per browser.
 - Dragging a pinned item down snaps it back — unpin first.
-- Depends on internal DOM (`data-row-key`, `panelRow`, React fiber), so a major DSH upgrade can disable the buttons until the selectors are updated.
+- Depends on internal DOM (`data-row-key`, `panelRow`/`panelEntry`, React fiber), so a major DSH upgrade can disable the buttons until the selectors are updated.
 - Debug hook: `window.__dshPin` (`workspaceOrder()`, `panelPins`, `lastError`, `reassertPins()`).
 
 ## Development

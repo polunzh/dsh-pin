@@ -38,6 +38,7 @@ dsh plugin --profile desktop add @polunzh/dsh-pin
 | 工作区置顶状态 | 没有 | 持久化，取消时精确还原 |
 | 会话置顶 | `pinnedSessionIds` | 不碰 |
 | 面板 `order` | 注册时固定 | 钉到顶部，按浏览器记录顺序 |
+| 面板 pin/unpin | 官方悬停图钉（把面板收进「更多」） | 接管：隐藏原生灰图钉，改为钉到顶部 |
 
 ## 工作原理
 
@@ -45,6 +46,7 @@ dsh plugin --profile desktop add @polunzh/dsh-pin
 - 取消置顶时插回「置顶前紧跟在它后面的工作区」之前；锚点已不存在就追加到列表末尾。
 - 新建工作区会插到注册表最前。插件监听顺序变化，只把置顶项拉回顶部，其余顺序不动。
 - 面板顺序只走 DOM：重排行并把顺序记到 `dsh-pin.panels.v1`，取消置顶时按 slot 注册顺序还原。
+- 新版 DSH 自带面板 unpin 图钉（悬停行时出现的灰色实心钉，点了把面板收进「更多」）。dsh-pin 把它隐藏、改用自己的图钉，一行只留一个图钉，置顶时变成强调蓝。
 - React 重渲染后由 `MutationObserver` 重新注入按钮并重放面板顺序。
 - 宿主半是 no-op，逻辑全在 `lib/client.js`。
 
@@ -54,7 +56,7 @@ dsh plugin --profile desktop add @polunzh/dsh-pin
 - 「未分组（Ungrouped）」不是真实工作区，不能置顶。
 - 工作区顺序是宿主全局的；面板顺序按浏览器本地。
 - 把置顶项往下拖会被自动拉回，想换位置先取消置顶。
-- 依赖应用内部 DOM（`data-row-key`、`panelRow`、React fiber），DSH 大版本升级后按钮可能失效，适配选择器即可恢复。
+- 依赖应用内部 DOM（`data-row-key`、`panelRow`/`panelEntry`、React fiber），DSH 大版本升级后按钮可能失效，适配选择器即可恢复。
 - 调试钩子：`window.__dshPin`（`workspaceOrder()`、`panelPins`、`lastError`、`reassertPins()`）。
 
 ## 开发

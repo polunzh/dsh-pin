@@ -292,3 +292,15 @@ afterRender= ["记忆卡","Plugins","Automation tasks","用量统计","便签墙
 | [04-panel-hover.png](../../assets/04-panel-hover.png) | 面板行 hover：右侧浮出置顶按钮；置顶面板在列表顶部 |
 
 > 其余开发期细节截图（panel-list / panel-row-hover / panel-pinned-top / rail-56px 等）只存在于本地实验记录，未随仓库发布。
+
+## 11. 新版侧栏：panelEntry 包裹 + 原生 panelUnpin（2026-11 构建）
+
+> 从 `app.asar`（DSH 0.2.2-rc.1，2026-11-11 构建）的 `dsh-client-ui-sidebar/lib/client.js` 实测。
+> 这一版给侧栏加了原生面板 pin/unpin，上文（基于 11-07 的 0.2.2-rc.1-c59d10a）里「行是 nav 直接子元素」的假设已过时。
+
+- **DOM 变了**：`nav[class*="panelList"]` 的直接子元素现在是 `div[class*="panelEntry"]`，里面再放 `button[class*="panelRow"]`（`padding-right:38px` 给图钉留位）+ `button[class*="panelUnpin"]`。
+- **原生 panelUnpin**：`IconPinFillRegular`（实心图钉），`color: var(--dsw-alias-label-caption)`（灰），`position:absolute; right:0; top:2px; 28×28`，`opacity:0` 只在 `panelEntry:hover` / `:has(:focus-visible)` 时显示；点击 `setPinned(id,false)` 把面板收进「更多」。`plugins` 行不显示（`id!=="plugins"` 才给）。
+- **dsh-pin 的处理**：
+  1. CSS 隐藏原生的 `button[class*="panelUnpin"]`（`display:none !important`），面板图钉统一由 dsh-pin 提供，避免一行两个图钉、以及原生灰色与置顶蓝色不一致。
+  2. 排序/定位都改用「行的列表直接子元素」（`div.panelEntry`，旧版则是行本身）：`pinEntryOf(list,node)` 向上找到 `parentElement === list` 的元素再移动 / 用它的 `offsetTop`。否则 `row.offsetTop` 相对 `panelEntry` 恒为 0，图钉会全挤到顶部。
+- 选择器保持 `[class*="panelRow"]` / `[class*="panelUnpin"]` 这类哈希无关写法，仍可用。
