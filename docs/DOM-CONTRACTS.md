@@ -303,4 +303,5 @@ afterRender= ["记忆卡","Plugins","Automation tasks","用量统计","便签墙
 - **dsh-pin 的处理**：
   1. CSS 隐藏原生的 `button[class*="panelUnpin"]`（`display:none !important`），面板图钉统一由 dsh-pin 提供，避免一行两个图钉、以及原生灰色与置顶蓝色不一致。
   2. 排序/定位都改用「行的列表直接子元素」（`div.panelEntry`，旧版则是行本身）：`pinEntryOf(list,node)` 向上找到 `parentElement === list` 的元素再移动 / 用它的 `offsetTop`。否则 `row.offsetTop` 相对 `panelEntry` 恒为 0，图钉会全挤到顶部。
+  3. **图钉挂进 `panelEntry`（行的同级），不再挂 `nav`**：其它插件（如 dsh-todo 的番茄倒计时）会扫描面板行的**兄弟节点**里绝对定位的浮层，把它的左缘当作行右端占用来自动让位。挂 `nav` 时图钉只是 `panelEntry` 的兄弟、行插件量不到，倒计时就和图钉重叠（截图为证）。挂进 `panelEntry` 后 `top` 相对 `panelEntry`（`(offsetHeight-20)/2`），旧版侧栏仍挂 `nav`、按 `nav` 坐标算。
 - 选择器保持 `[class*="panelRow"]` / `[class*="panelUnpin"]` 这类哈希无关写法，仍可用。

@@ -47,6 +47,7 @@ The button matches the native row buttons (24×24 hit area) and never opens or c
 - New workspaces are created at the head of the registry. The plugin watches order changes and pulls pins back up, leaving the remaining order alone.
 - Panel order is DOM-only: rows get reordered and the order recorded under `dsh-pin.panels.v1`, with unpin restoring slot registration order.
 - Newer DSH builds ship their own panel unpin pin (a gray filled pin shown on row hover). dsh-pin hides it and draws its own pin, so each row shows a single pin that turns accent-blue when pinned.
+- The panel pin sits inside the row's `panelEntry` (a sibling of the row), so plugins that draw their own right-edge content — like dsh-todo's pomodoro countdown — can measure it and shift aside instead of overlapping.
 - A `MutationObserver` re-injects buttons after React re-renders and replays panel order.
 - The host half is a no-op; all logic lives in `lib/client.js`.
 

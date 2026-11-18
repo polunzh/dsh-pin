@@ -47,6 +47,7 @@ dsh plugin --profile desktop add @polunzh/dsh-pin
 - 新建工作区会插到注册表最前。插件监听顺序变化，只把置顶项拉回顶部，其余顺序不动。
 - 面板顺序只走 DOM：重排行并把顺序记到 `dsh-pin.panels.v1`，取消置顶时按 slot 注册顺序还原。
 - 新版 DSH 自带面板 unpin 图钉（悬停行时出现的灰色实心钉，点了把面板收进「更多」）。dsh-pin 把它隐藏、改用自己的图钉，一行只留一个图钉，置顶时变成强调蓝。
+- 面板图钉挂在行的 `panelEntry` 里（与行同级），所以自绘行右端内容的插件（如 dsh-todo 的番茄倒计时）能测到它并自动让位，不会重叠。
 - React 重渲染后由 `MutationObserver` 重新注入按钮并重放面板顺序。
 - 宿主半是 no-op，逻辑全在 `lib/client.js`。
 
