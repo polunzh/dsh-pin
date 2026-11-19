@@ -191,9 +191,64 @@ try {
   } else {
     skip('插件区高度上限：未找到已移动的 nav');
   }
+
+  /* 7. 拖动底边调整最大高度（鼠标 / 键盘 / 双击复位） */
+  const resizer = await cdp.evaluate(pageExpr(() => {
+    const el = document.querySelector('[data-dsh-pin-panel-section-resizer]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const nav = document.querySelector('nav[data-dsh-pin-panel-section-moved]');
+    return { visible: !el.hidden && r.height > 0, x: r.x + r.width / 2, y: r.y + r.height / 2, navHeight: nav ? Math.round(nav.getBoundingClientRect().height) : null };
+  }));
+  if (!resizer || !resizer.visible) {
+    skip('拖动调整高度：拖拽条不可见，跳过');
+  } else {
+    const startH = resizer.navHeight;
+    // 鼠标拖动：按住下移 90px
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: resizer.x, y: resizer.y, button: 'left', buttons: 1, clickCount: 1 });
+    for (const dy of [30, 60, 90]) {
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: resizer.x, y: resizer.y + dy, button: 'left', buttons: 1 });
+      await cdp.wait(40);
+    }
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: resizer.x, y: resizer.y + 90, button: 'left', buttons: 0, clickCount: 1 });
+    await cdp.wait(200);
+    const dragged = await cdp.evaluate(pageExpr(() => {
+      const nav = document.querySelector('nav[data-dsh-pin-panel-section-moved]');
+      return { inline: nav ? nav.style.maxHeight : null, stored: localStorage.getItem('dsh-pin.panel-section-height.v1'), hook: window.__dshPin?.panelSectionHeight ?? null };
+    }));
+    check(
+      '拖动底边增大高度上限并持久化',
+      !!dragged.inline && /px$/.test(dragged.inline) && parseInt(dragged.inline, 10) > (startH ?? 0) && Number(dragged.stored) > 0,
+      JSON.stringify(dragged),
+    );
+
+    // 键盘 ArrowDown/ArrowUp 也改高度
+    const kb = await cdp.evaluate(pageExpr(() => {
+      const el = document.querySelector('[data-dsh-pin-panel-section-resizer]');
+      const nav = document.querySelector('nav[data-dsh-pin-panel-section-moved]');
+      const read = () => parseInt(nav.style.maxHeight || '0', 10);
+      el.focus();
+      const before = read();
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      const afterDown = read();
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+      const afterUp = read();
+      return { before, afterDown, afterUp };
+    }));
+    check('方向键可微调高度（下增上减）', kb.afterDown > kb.before && kb.afterUp < kb.afterDown, JSON.stringify(kb));
+
+    // 双击复位到 CSS 默认上限并清除存储
+    const reset = await cdp.evaluate(pageExpr(() => {
+      const el = document.querySelector('[data-dsh-pin-panel-section-resizer]');
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      const nav = document.querySelector('nav[data-dsh-pin-panel-section-moved]');
+      return { inline: nav.style.maxHeight, stored: localStorage.getItem('dsh-pin.panel-section-height.v1'), hook: window.__dshPin?.panelSectionHeight ?? null };
+    }));
+    check('双击复位为默认高度并清除记录', reset.inline === '' && reset.stored === null && reset.hook === null, JSON.stringify(reset));
+  }
 } finally {
   // 恢复展开与初始状态，避免污染实例
-  await cdp.evaluate(`(() => { try { localStorage.removeItem('dsh-pin.panel-section.v1'); } catch {} return true; })()`).catch(() => {});
+  await cdp.evaluate(`(() => { try { localStorage.removeItem('dsh-pin.panel-section.v1'); localStorage.removeItem('dsh-pin.panel-section-height.v1'); } catch {} return true; })()`).catch(() => {});
   await cdp.navigate(undefined, { settleMs: 3000 }).catch(() => {});
   cdp.close();
 }

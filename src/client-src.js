@@ -20,6 +20,10 @@ const NS = "dsh-pin";
 const STORAGE_WORKSPACES = "dsh-pin.workspaces.v1";
 const STORAGE_PANELS = "dsh-pin.panels.v1";
 const STORAGE_PANEL_SECTION = "dsh-pin.panel-section.v1";
+const STORAGE_PANEL_SECTION_HEIGHT = "dsh-pin.panel-section-height.v1";
+/** 拖拽出的高度边界（像素）。上限按侧栏可用高度动态收缩。 */
+const PANEL_SECTION_MIN_HEIGHT = 120;
+const PANEL_SECTION_MAX_RATIO = 0.72;
 const STYLE_ID = "dsh-pin-style";
 const PIN_BUTTON_SIZE = 20;
 const PANEL_BUTTON_OFFSET = 6;
@@ -51,6 +55,7 @@ const ATTR = {
   panelSectionOrigin: "data-dsh-pin-panel-section-origin",
   panelSectionMoved: "data-dsh-pin-panel-section-moved",
   panelSectionRail: "data-dsh-pin-panel-section-rail",
+  panelSectionResizer: "data-dsh-pin-panel-section-resizer",
 };
 
 /*
@@ -77,6 +82,7 @@ const DICTIONARIES = {
     "section.plugins": "插件",
     "section.expandPlugins": "展开插件列表",
     "section.collapsePlugins": "收起插件列表",
+    "section.resize": "调整插件区高度",
     "marker.pinned": "已置顶",
     "toast.pinnedWorkspace": "已置顶工作区「{title}」",
     "toast.unpinnedWorkspace": "已取消置顶「{title}」",
@@ -93,6 +99,7 @@ const DICTIONARIES = {
     "section.plugins": "Plugins",
     "section.expandPlugins": "Expand plugin list",
     "section.collapsePlugins": "Collapse plugin list",
+    "section.resize": "Resize plugin section",
     "marker.pinned": "Pinned",
     "toast.pinnedWorkspace": "Pinned workspace \u201c{title}\u201d",
     "toast.unpinnedWorkspace": "Unpinned \u201c{title}\u201d",
@@ -312,6 +319,41 @@ nav[${ATTR.panelSectionMoved}][hidden] {
 [${ATTR.panelSectionOrigin}] {
   display: none !important;
 }
+.dsh-pin-panel-section-resizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 9px;
+  margin: 1px 4px;
+  flex: none;
+  cursor: ns-resize;
+  touch-action: none;
+  border-radius: 5px;
+  background: transparent;
+}
+.dsh-pin-panel-section-resizer::before {
+  content: "";
+  width: 30px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-secondary, rgba(128, 128, 128, 0.35));
+  transition: background-color 120ms ease;
+}
+.dsh-pin-panel-section-resizer:hover::before,
+.dsh-pin-panel-section-resizer:focus-visible::before {
+  background: var(--dsw-alias-state-business-primary, #4d6bfe);
+}
+.dsh-pin-panel-section-resizer:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #4d6bfe));
+  outline-offset: -2px;
+}
+.dsh-pin-panel-section-resizer[hidden] {
+  display: none !important;
+}
+body.dsh-pin-resizing {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
 /* 键盘模态：工作区行没有 :focus-within 规则，注入的 📌 也需要能聚焦。 */
 [data-row-key^="workspace:"]:focus-within [class*="rowActions"] {
   display: inline-flex;
@@ -380,7 +422,8 @@ ${SELECTOR.rowActions ? "" : ""}
 @media (prefers-reduced-motion: reduce) {
   .dsh-pin-toast { animation: none; }
   .dsh-pin-button,
-  .dsh-pin-panel-section-chevron { transition: none; }
+  .dsh-pin-panel-section-chevron,
+  .dsh-pin-panel-section-resizer::before { transition: none; }
 }
 `;
   document.head.appendChild(style);
@@ -422,10 +465,19 @@ function install(ctx) {
     readStorage(STORAGE_PANEL_SECTION),
     window.matchMedia?.("(max-width: 720px)")?.matches === true,
   );
+  /** 用户拖拽出的插件区高度（像素）；null 表示用 CSS 默认上限。 */
+  let panelSectionHeight = clampPanelSectionHeight(readStorage(STORAGE_PANEL_SECTION_HEIGHT), {
+    min: PANEL_SECTION_MIN_HEIGHT,
+    max: 100000,
+    fallback: null,
+  });
   /** @type {HTMLElement | null} */
   let panelSectionOrigin = null;
   /** @type {HTMLElement | null} */
   let panelSectionNav = null;
+  /** @type {HTMLElement | null} */
+  let panelSectionResizer = null;
+  let resizingCleanup = null;
 
   // 置顶顺序自愈的状态：
   // workspaceMoveBusy  用户触发的 pin/unpin 移动执行中，自愈让路，避免重复移动；
@@ -539,7 +591,122 @@ function install(ctx) {
     return button;
   }
 
-  function updatePanelSectionState(nav, header) {
+  function panelSectionBounds(nav) {
+    const sidebar = nav.closest('[class*="_root"]') ?? nav.parentElement;
+    const height = sidebar?.getBoundingClientRect().height || window.innerHeight || 720;
+    return {
+      min: PANEL_SECTION_MIN_HEIGHT,
+      max: Math.max(PANEL_SECTION_MIN_HEIGHT, Math.round(height * PANEL_SECTION_MAX_RATIO)),
+    };
+  }
+
+  function applyPanelSectionHeight(nav) {
+    if (!nav) return;
+    if (panelSectionHeight == null) {
+      nav.style.maxHeight = "";
+      return;
+    }
+    const { min, max } = panelSectionBounds(nav);
+    const value = clampPanelSectionHeight(panelSectionHeight, { min, max, fallback: null });
+    nav.style.maxHeight = `${value}px`;
+  }
+
+  function updateResizerA11y(nav, resizer) {
+    if (!nav || !resizer) return;
+    const { min, max } = panelSectionBounds(nav);
+    const measured = Math.round(nav.getBoundingClientRect().height);
+    const value = panelSectionHeight == null ? measured : Math.round(panelSectionHeight);
+    resizer.setAttribute("aria-valuemin", String(min));
+    resizer.setAttribute("aria-valuemax", String(max));
+    resizer.setAttribute("aria-valuenow", String(value));
+    resizer.setAttribute("aria-label", tr("section.resize"));
+    resizer.setAttribute("title", tr("section.resize"));
+  }
+
+  function createPanelSectionResizer() {
+    const el = document.createElement("div");
+    el.className = "dsh-pin-panel-section-resizer";
+    el.setAttribute(ATTR.panelSectionResizer, "");
+    el.setAttribute("role", "separator");
+    el.setAttribute("aria-orientation", "horizontal");
+    el.tabIndex = 0;
+
+    const currentNav = () =>
+      el.previousElementSibling?.matches("nav") ? el.previousElementSibling : panelSectionNav;
+    const persist = () => {
+      if (panelSectionHeight == null) {
+        try {
+          window.localStorage.removeItem(STORAGE_PANEL_SECTION_HEIGHT);
+        } catch {
+          /* ignore */
+        }
+      } else {
+        writeStorage(STORAGE_PANEL_SECTION_HEIGHT, String(panelSectionHeight));
+      }
+    };
+    const setHeight = (px, { write = true } = {}) => {
+      const nav = currentNav();
+      if (!nav) return;
+      const { min, max } = panelSectionBounds(nav);
+      panelSectionHeight = clampPanelSectionHeight(px, { min, max, fallback: null });
+      applyPanelSectionHeight(nav);
+      updateResizerA11y(nav, el);
+      if (write) persist();
+    };
+    const reset = () => {
+      const nav = currentNav();
+      panelSectionHeight = null;
+      if (nav) {
+        nav.style.maxHeight = "";
+        updateResizerA11y(nav, el);
+      }
+      persist();
+    };
+
+    el.addEventListener("pointerdown", (event) => {
+      const nav = currentNav();
+      if (!nav) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const startY = event.clientY;
+      const startHeight = nav.getBoundingClientRect().height;
+      document.body.classList.add("dsh-pin-resizing");
+      const move = (ev) => setHeight(startHeight + (ev.clientY - startY), { write: false });
+      const up = () => {
+        document.removeEventListener("pointermove", move, true);
+        document.removeEventListener("pointerup", up, true);
+        document.body.classList.remove("dsh-pin-resizing");
+        resizingCleanup = null;
+        persist();
+      };
+      resizingCleanup = up;
+      document.addEventListener("pointermove", move, true);
+      document.addEventListener("pointerup", up, true);
+    });
+    el.addEventListener("keydown", (event) => {
+      const nav = currentNav();
+      if (!nav) return;
+      const step = event.shiftKey ? 64 : 24;
+      const base = panelSectionHeight ?? nav.getBoundingClientRect().height;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setHeight(base + step);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setHeight(base - step);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        reset();
+      }
+    });
+    el.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      reset();
+    });
+    return el;
+  }
+
+  function updatePanelSectionState(nav, header, resizer) {
     const parentWidth = nav.parentElement?.getBoundingClientRect().width ?? 0;
     const rail = parentWidth > 0 && parentWidth <= 80;
     const expanded = !panelSectionCollapsed;
@@ -560,22 +727,40 @@ function install(ctx) {
     );
     nav.hidden = panelSectionCollapsed && !rail;
     nav.toggleAttribute(ATTR.panelSectionRail, rail);
+    applyPanelSectionHeight(nav);
+    if (resizer) {
+      resizer.hidden = rail || panelSectionCollapsed;
+      updateResizerA11y(nav, resizer);
+    }
   }
 
   function restorePanelSection() {
+    if (typeof resizingCleanup === "function") {
+      try {
+        resizingCleanup();
+      } catch {
+        /* ignore */
+      }
+      resizingCleanup = null;
+    }
+    document.body.classList.remove("dsh-pin-resizing");
     const nav = panelSectionNav ?? document.querySelector(`nav[${ATTR.panelSectionMoved}]`);
     const header = document.querySelector(`[${ATTR.panelSectionHeader}]`);
+    const resizer = document.querySelector(`[${ATTR.panelSectionResizer}]`);
     const origin = panelSectionOrigin ?? document.querySelector(`[${ATTR.panelSectionOrigin}]`);
     if (nav) {
       nav.hidden = false;
+      nav.style.maxHeight = "";
       nav.removeAttribute(ATTR.panelSectionMoved);
       nav.removeAttribute(ATTR.panelSectionRail);
       if (origin?.parentElement) origin.insertAdjacentElement("afterend", nav);
     }
     header?.remove();
+    resizer?.remove();
     origin?.remove();
     panelSectionNav = null;
     panelSectionOrigin = null;
+    panelSectionResizer = null;
   }
 
   function syncPanelSection() {
@@ -591,8 +776,9 @@ function install(ctx) {
     // rail 模式会卸载全部 workspace 行；保留已建立的区域并强制显示原生图标。
     if (!workspaceRow) {
       const header = parent.querySelector(`[${ATTR.panelSectionHeader}]`);
+      const resizer = parent.querySelector(`[${ATTR.panelSectionResizer}]`);
       if (nav.hasAttribute(ATTR.panelSectionMoved) && header) {
-        updatePanelSectionState(nav, header);
+        updatePanelSectionState(nav, header, resizer);
         return true;
       }
       return false;
@@ -613,15 +799,23 @@ function install(ctx) {
     }
     let header = parent.querySelector(`[${ATTR.panelSectionHeader}]`);
     if (!header) header = createPanelSectionHeader();
+    let resizer = parent.querySelector(`[${ATTR.panelSectionResizer}]`);
+    if (!resizer) resizer = createPanelSectionResizer();
 
-    if (header.nextSibling !== nav || nav.nextSibling !== workspaceBranch) {
+    if (
+      header.nextElementSibling !== nav ||
+      nav.nextElementSibling !== resizer ||
+      resizer.nextElementSibling !== workspaceBranch
+    ) {
       parent.insertBefore(header, workspaceBranch);
       parent.insertBefore(nav, workspaceBranch);
+      parent.insertBefore(resizer, workspaceBranch);
     }
     nav.setAttribute(ATTR.panelSectionMoved, "");
     panelSectionOrigin = origin;
     panelSectionNav = nav;
-    updatePanelSectionState(nav, header);
+    panelSectionResizer = resizer;
+    updatePanelSectionState(nav, header, resizer);
     return true;
   }
 
@@ -1289,6 +1483,9 @@ function install(ctx) {
       },
       get panelSectionCollapsed() {
         return panelSectionCollapsed;
+      },
+      get panelSectionHeight() {
+        return panelSectionHeight;
       },
       workspaceOrder,
       resync() {

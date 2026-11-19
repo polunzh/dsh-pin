@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  clampPanelSectionHeight,
   findWorkspaceRecord,
   orderWithPinnedFirst,
   parsePanelPins,
@@ -170,6 +171,19 @@ test("panel section collapse state respects saved choice and narrow default", ()
   assert.equal(resolvePanelSectionCollapsed(null, false), false);
   assert.equal(resolvePanelSectionCollapsed(null, true), true);
   assert.equal(resolvePanelSectionCollapsed("invalid", true), true);
+});
+
+test("clampPanelSectionHeight clamps to bounds and falls back on invalid input", () => {
+  const bounds = { min: 120, max: 600, fallback: null };
+  assert.equal(clampPanelSectionHeight("300", bounds), 300);
+  assert.equal(clampPanelSectionHeight(50, bounds), 120);
+  assert.equal(clampPanelSectionHeight(999, bounds), 600);
+  assert.equal(clampPanelSectionHeight(300.6, bounds), 301);
+  assert.equal(clampPanelSectionHeight("", bounds), null);
+  assert.equal(clampPanelSectionHeight(null, bounds), null);
+  assert.equal(clampPanelSectionHeight("abc", bounds), null);
+  assert.equal(clampPanelSectionHeight("200", { min: 120, max: 80, fallback: 160 }), 120);
+  assert.equal(clampPanelSectionHeight("x", { min: 120, max: 600, fallback: 360 }), 360);
 });
 
 test("panel pins toggle with newest first and prune dead ids", () => {

@@ -1,6 +1,6 @@
 {
   "name": "@polunzh/dsh-pin",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "把侧栏整份插件列表移到工作区上方并支持折叠，同时置顶常用工作区与插件面板，取消时精确还原。Move the whole sidebar plugin list above workspaces with a collapsible header, and pin workspaces and plugin panels to the top with exact restore on unpin.",
   "type": "module",
   "main": "./lib/index.js",

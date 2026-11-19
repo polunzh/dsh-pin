@@ -41,6 +41,7 @@ dsh plugin --profile desktop add @polunzh/dsh-pin
 - 点标题，或聚焦后按 Enter，收起或展开列表；状态按浏览器存在 `dsh-pin.panel-section.v1`。
 - 首次使用时，常规桌面宽度默认展开，窄宽度默认收起；用户显式选择后以选择为准。
 - 展开时列表高度上限约为侧边栏三分之一，并独立滚动，插件再多也不会把工作区挤到看不着。
+- 拖动列表下方的细条抬高或压低这个上限；方向键微调，双击复位。高度按浏览器存在 `dsh-pin.panel-section-height.v1`。
 - 收起只隐藏列表，不会切换或关闭当前选中的面板。
 - 侧边栏收成 56px 图标条时，标题隐藏，原生图标列表照常显示。
 
@@ -73,7 +74,7 @@ dsh plugin --profile desktop add @polunzh/dsh-pin
 - 工作区顺序是宿主全局的；面板顺序按浏览器本地。
 - 把置顶项往下拖会被自动拉回，想换位置先取消置顶。
 - 依赖应用内部 DOM（`data-row-key`、`panelRow`/`panelEntry`、React fiber），DSH 大版本升级后按钮可能失效，适配选择器即可恢复。顶部插件区失效即回退：找不到匹配标记就把布局还原，不影响原侧边栏。
-- 调试钩子：`window.__dshPin`（`workspaceOrder()`、`panelPins`、`panelSectionCollapsed`、`lastError`、`reassertPins()`）。
+- 调试钩子：`window.__dshPin`（`workspaceOrder()`、`panelPins`、`panelSectionCollapsed`、`panelSectionHeight`、`lastError`、`reassertPins()`）。
 
 ## 开发
 

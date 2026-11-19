@@ -318,3 +318,4 @@ afterRender= ["记忆卡","Plugins","Automation tasks","用量统计","便签墙
 - **高度**：展开时 `max-height: min(36vh, 360px)`（约侧栏三分之一），`overflow-y:auto` 独立滚动。
 - **状态**：`dsh-pin.panel-section.v1` = `expanded` | `collapsed`；无值时窄视口（≤720px）默认收起，否则展开。
 - **可测钩子**：`window.__dshPin.panelSectionCollapsed`；E2E 见 `test/e2e/panel-section.mjs`。
+- **可调高度**：列表下方插一条 `div[data-dsh-pin-panel-section-resizer]`（`role=separator`，`tabindex=0`）。指针上下拖动改 `nav.style.maxHeight`（像素），按 `dsh-pin.panel-section-height.v1` 持久化；`↑/↓` 步进 24px（Shift 64px），`Home` 或双击恢复默认上限。收起或 rail 时该条 `hidden`。上限上限为侧栏高度的 72%，下限 120px。

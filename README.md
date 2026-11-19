@@ -41,6 +41,7 @@ The whole plugin list move is the same list the host renders — no copy, no sec
 - Click the header, or focus it and press Enter, to collapse or expand the list. The state is stored per browser under `dsh-pin.panel-section.v1`.
 - On a first visit the list is expanded on a normal desktop width and collapsed on a narrow one; an explicit choice always wins afterwards.
 - Expanded, the list is capped near one third of the sidebar height and scrolls on its own, so a long plugin list never pushes workspace browsing out of reach.
+- Drag the thin grip below the list to raise or lower that cap; arrow keys nudge it and double-click resets. The height is stored per browser under `dsh-pin.panel-section-height.v1`.
 - Collapsing only hides the list — it never changes or closes the selected panel.
 - When the sidebar collapses to the 56px icon rail, the header hides and the native icon list shows as before.
 
@@ -73,7 +74,7 @@ The whole plugin list move is the same list the host renders — no copy, no sec
 - Workspace order is global to the host; panel order is per browser.
 - Dragging a pinned item down snaps it back — unpin first.
 - Depends on internal DOM (`data-row-key`, `panelRow`/`panelEntry`, React fiber), so a major DSH upgrade can disable the buttons until the selectors are updated. The plugin section fails open: with no matching marker it restores the original layout.
-- Debug hook: `window.__dshPin` (`workspaceOrder()`, `panelPins`, `panelSectionCollapsed`, `lastError`, `reassertPins()`).
+- Debug hook: `window.__dshPin` (`workspaceOrder()`, `panelPins`, `panelSectionCollapsed`, `panelSectionHeight`, `lastError`, `reassertPins()`).
 
 ## Development
 
