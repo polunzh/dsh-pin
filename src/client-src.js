@@ -19,6 +19,7 @@
 const NS = "dsh-pin";
 const STORAGE_WORKSPACES = "dsh-pin.workspaces.v1";
 const STORAGE_PANELS = "dsh-pin.panels.v1";
+const STORAGE_PANEL_SECTION = "dsh-pin.panel-section.v1";
 const STYLE_ID = "dsh-pin-style";
 const PIN_BUTTON_SIZE = 20;
 const PANEL_BUTTON_OFFSET = 6;
@@ -30,6 +31,7 @@ const SELECTOR = {
   panelList: '[class*="panelList"]',
   panelRow: 'button[class*="panelRow"]',
   workspaceRow: '[data-row-key^="workspace:"]',
+  sidebarToggle: 'button[class*="toggle"][aria-label*="sidebar" i]',
   rowActions: '[class*="rowActions"]',
   pinButton: "[data-dsh-pin]",
 };
@@ -45,6 +47,10 @@ const ATTR = {
   toast: "data-dsh-pin-toast",
   panelList: "data-dsh-pin-list",
   panelButtonVisible: "data-dsh-pin-visible",
+  panelSectionHeader: "data-dsh-pin-panel-section-header",
+  panelSectionOrigin: "data-dsh-pin-panel-section-origin",
+  panelSectionMoved: "data-dsh-pin-panel-section-moved",
+  panelSectionRail: "data-dsh-pin-panel-section-rail",
 };
 
 /*
@@ -68,6 +74,9 @@ const DICTIONARIES = {
     "action.unpinWorkspace": "取消置顶工作区",
     "action.pinPanel": "置顶插件",
     "action.unpinPanel": "取消置顶插件",
+    "section.plugins": "插件",
+    "section.expandPlugins": "展开插件列表",
+    "section.collapsePlugins": "收起插件列表",
     "marker.pinned": "已置顶",
     "toast.pinnedWorkspace": "已置顶工作区「{title}」",
     "toast.unpinnedWorkspace": "已取消置顶「{title}」",
@@ -81,6 +90,9 @@ const DICTIONARIES = {
     "action.unpinWorkspace": "Unpin workspace",
     "action.pinPanel": "Pin plugin",
     "action.unpinPanel": "Unpin plugin",
+    "section.plugins": "Plugins",
+    "section.expandPlugins": "Expand plugin list",
+    "section.collapsePlugins": "Collapse plugin list",
     "marker.pinned": "Pinned",
     "toast.pinnedWorkspace": "Pinned workspace \u201c{title}\u201d",
     "toast.unpinnedWorkspace": "Unpinned \u201c{title}\u201d",
@@ -236,6 +248,70 @@ function ensureStyles() {
 nav[class*="panelList"] button[class*="panelUnpin"] {
   display: none !important;
 }
+.dsh-pin-panel-section-header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 3px 8px 3px 10px;
+  margin: 0;
+  flex: none;
+  border: 0;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #5f6368);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+.dsh-pin-panel-section-header:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.12));
+  color: var(--dsw-alias-label-primary, #1d1d1f);
+}
+.dsh-pin-panel-section-header:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #4d6bfe));
+  outline-offset: -2px;
+}
+.dsh-pin-panel-section-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-pin-panel-section-count {
+  margin-left: 6px;
+  color: var(--dsw-alias-label-caption, #8b8f96);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+.dsh-pin-panel-section-chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  flex: none;
+  transition: transform 120ms ease;
+}
+.dsh-pin-panel-section-header[aria-expanded="false"] .dsh-pin-panel-section-chevron {
+  transform: rotate(-90deg);
+}
+nav[${ATTR.panelSectionMoved}] {
+  max-height: min(36vh, 360px);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 0 1 auto;
+  scrollbar-gutter: stable;
+}
+nav[${ATTR.panelSectionMoved}][hidden] {
+  display: none !important;
+}
+[${ATTR.panelSectionOrigin}] {
+  display: none !important;
+}
 /* 键盘模态：工作区行没有 :focus-within 规则，注入的 📌 也需要能聚焦。 */
 [data-row-key^="workspace:"]:focus-within [class*="rowActions"] {
   display: inline-flex;
@@ -303,7 +379,8 @@ ${SELECTOR.rowActions ? "" : ""}
 }
 @media (prefers-reduced-motion: reduce) {
   .dsh-pin-toast { animation: none; }
-  .dsh-pin-button { transition: none; }
+  .dsh-pin-button,
+  .dsh-pin-panel-section-chevron { transition: none; }
 }
 `;
   document.head.appendChild(style);
@@ -341,6 +418,14 @@ function install(ctx) {
   let workspaceRecords = parseWorkspaceRecords(readStorage(STORAGE_WORKSPACES));
   /** @type {string[]} */
   let panelPins = parsePanelPins(readStorage(STORAGE_PANELS));
+  let panelSectionCollapsed = resolvePanelSectionCollapsed(
+    readStorage(STORAGE_PANEL_SECTION),
+    window.matchMedia?.("(max-width: 720px)")?.matches === true,
+  );
+  /** @type {HTMLElement | null} */
+  let panelSectionOrigin = null;
+  /** @type {HTMLElement | null} */
+  let panelSectionNav = null;
 
   // 置顶顺序自愈的状态：
   // workspaceMoveBusy  用户触发的 pin/unpin 移动执行中，自愈让路，避免重复移动；
@@ -402,6 +487,142 @@ function install(ctx) {
       }
     }
     return list;
+  }
+
+  function directChildContaining(parent, node) {
+    let current = node;
+    while (current && current.parentElement !== parent) current = current.parentElement;
+    return current?.parentElement === parent ? current : null;
+  }
+
+  function createSectionChevron() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.classList.add("dsh-pin-panel-section-chevron");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M4.25 6.25 8 10l3.75-3.75");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-width", "1.35");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function createPanelSectionHeader() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "dsh-pin-panel-section-header";
+    button.setAttribute(ATTR.panelSectionHeader, "");
+
+    const title = document.createElement("span");
+    title.className = "dsh-pin-panel-section-title";
+    button.appendChild(title);
+
+    const count = document.createElement("span");
+    count.className = "dsh-pin-panel-section-count";
+    count.setAttribute("aria-hidden", "true");
+    button.appendChild(count);
+    button.appendChild(createSectionChevron());
+
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      panelSectionCollapsed = !panelSectionCollapsed;
+      writeStorage(STORAGE_PANEL_SECTION, panelSectionCollapsed ? "collapsed" : "expanded");
+      syncPanelSection();
+      if (!panelSectionCollapsed) syncPanels();
+    });
+    return button;
+  }
+
+  function updatePanelSectionState(nav, header) {
+    const parentWidth = nav.parentElement?.getBoundingClientRect().width ?? 0;
+    const rail = parentWidth > 0 && parentWidth <= 80;
+    const expanded = !panelSectionCollapsed;
+    const rows = panelRows(nav);
+    const title = header.querySelector(".dsh-pin-panel-section-title");
+    const count = header.querySelector(".dsh-pin-panel-section-count");
+    if (title) title.textContent = tr("section.plugins");
+    if (count) count.textContent = String(rows.length);
+    header.hidden = rail;
+    header.setAttribute("aria-expanded", String(expanded));
+    header.setAttribute(
+      "aria-label",
+      tr(expanded ? "section.collapsePlugins" : "section.expandPlugins"),
+    );
+    header.setAttribute(
+      "title",
+      tr(expanded ? "section.collapsePlugins" : "section.expandPlugins"),
+    );
+    nav.hidden = panelSectionCollapsed && !rail;
+    nav.toggleAttribute(ATTR.panelSectionRail, rail);
+  }
+
+  function restorePanelSection() {
+    const nav = panelSectionNav ?? document.querySelector(`nav[${ATTR.panelSectionMoved}]`);
+    const header = document.querySelector(`[${ATTR.panelSectionHeader}]`);
+    const origin = panelSectionOrigin ?? document.querySelector(`[${ATTR.panelSectionOrigin}]`);
+    if (nav) {
+      nav.hidden = false;
+      nav.removeAttribute(ATTR.panelSectionMoved);
+      nav.removeAttribute(ATTR.panelSectionRail);
+      if (origin?.parentElement) origin.insertAdjacentElement("afterend", nav);
+    }
+    header?.remove();
+    origin?.remove();
+    panelSectionNav = null;
+    panelSectionOrigin = null;
+  }
+
+  function syncPanelSection() {
+    const list = panelListElement();
+    const nav = list?.closest("nav") ?? null;
+    if (!list || !nav || !nav.parentElement) {
+      restorePanelSection();
+      return false;
+    }
+
+    const parent = nav.parentElement;
+    const workspaceRow = document.querySelector(SELECTOR.workspaceRow);
+    // rail 模式会卸载全部 workspace 行；保留已建立的区域并强制显示原生图标。
+    if (!workspaceRow) {
+      const header = parent.querySelector(`[${ATTR.panelSectionHeader}]`);
+      if (nav.hasAttribute(ATTR.panelSectionMoved) && header) {
+        updatePanelSectionState(nav, header);
+        return true;
+      }
+      return false;
+    }
+
+    const workspaceBranch = directChildContaining(parent, workspaceRow);
+    if (!workspaceBranch || workspaceBranch === nav) {
+      restorePanelSection();
+      return false;
+    }
+
+    let origin = parent.querySelector(`[${ATTR.panelSectionOrigin}]`);
+    if (!origin) {
+      origin = document.createElement("span");
+      origin.setAttribute(ATTR.panelSectionOrigin, "");
+      origin.setAttribute("aria-hidden", "true");
+      parent.insertBefore(origin, nav);
+    }
+    let header = parent.querySelector(`[${ATTR.panelSectionHeader}]`);
+    if (!header) header = createPanelSectionHeader();
+
+    if (header.nextSibling !== nav || nav.nextSibling !== workspaceBranch) {
+      parent.insertBefore(header, workspaceBranch);
+      parent.insertBefore(nav, workspaceBranch);
+    }
+    nav.setAttribute(ATTR.panelSectionMoved, "");
+    panelSectionOrigin = origin;
+    panelSectionNav = nav;
+    updatePanelSectionState(nav, header);
+    return true;
   }
 
   function workspaceOrder() {
@@ -976,6 +1197,7 @@ function install(ctx) {
     scheduled = setTimeout(() => {
       scheduled = null;
       try {
+        syncPanelSection();
         syncWorkspaceRows();
         syncPanels();
       } catch (error) {
@@ -1034,6 +1256,7 @@ function install(ctx) {
           /* ignore */
         }
       }
+      restorePanelSection();
       for (const node of document.querySelectorAll(
         `[${ATTR.pin}], [${ATTR.marker}], [${ATTR.toast}]`,
       )) {
@@ -1064,8 +1287,12 @@ function install(ctx) {
       get panelPins() {
         return panelPins;
       },
+      get panelSectionCollapsed() {
+        return panelSectionCollapsed;
+      },
       workspaceOrder,
       resync() {
+        syncPanelSection();
         syncWorkspaceRows();
         syncPanels();
         void restorePinnedPrefix();

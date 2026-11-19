@@ -12,6 +12,7 @@ import {
   planUnpinWorkspace,
   prunePanelPins,
   removeWorkspaceRecord,
+  resolvePanelSectionCollapsed,
   serializePanelPins,
   serializeWorkspaceRecords,
   togglePanelPin,
@@ -159,6 +160,16 @@ test("workspace record storage round-trips and degrades safely", () => {
     ),
     [{ workspaceId: "w-a", restoreBeforeId: "w-b", pinnedAt: 3 }],
   );
+});
+
+test("panel section collapse state respects saved choice and narrow default", () => {
+  assert.equal(resolvePanelSectionCollapsed("collapsed", false), true);
+  assert.equal(resolvePanelSectionCollapsed("collapsed", true), true);
+  assert.equal(resolvePanelSectionCollapsed("expanded", false), false);
+  assert.equal(resolvePanelSectionCollapsed("expanded", true), false);
+  assert.equal(resolvePanelSectionCollapsed(null, false), false);
+  assert.equal(resolvePanelSectionCollapsed(null, true), true);
+  assert.equal(resolvePanelSectionCollapsed("invalid", true), true);
 });
 
 test("panel pins toggle with newest first and prune dead ids", () => {

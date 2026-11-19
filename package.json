@@ -1,7 +1,7 @@
 {
   "name": "@polunzh/dsh-pin",
-  "version": "1.0.6",
-  "description": "置顶常用工作区与侧栏插件面板：把它们固定到侧边栏顶部，取消时精确还原。Pin workspaces and sidebar plugin panels to the top of the DSH sidebar, with exact restore on unpin.",
+  "version": "1.1.0",
+  "description": "把侧栏整份插件列表移到工作区上方并支持折叠，同时置顶常用工作区与插件面板，取消时精确还原。Move the whole sidebar plugin list above workspaces with a collapsible header, and pin workspaces and plugin panels to the top with exact restore on unpin.",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -38,7 +38,8 @@
     "check": "node scripts/build-client.mjs --check",
     "e2e": "node test/e2e/run.mjs",
     "test:e2e": "node test/e2e/run.mjs",
-    "test:pin": "node test/e2e/pin-interaction.mjs"
+    "test:pin": "node test/e2e/pin-interaction.mjs",
+    "test:panel": "node test/e2e/panel-section.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -305,3 +305,16 @@ afterRender= ["记忆卡","Plugins","Automation tasks","用量统计","便签墙
   2. 排序/定位都改用「行的列表直接子元素」（`div.panelEntry`，旧版则是行本身）：`pinEntryOf(list,node)` 向上找到 `parentElement === list` 的元素再移动 / 用它的 `offsetTop`。否则 `row.offsetTop` 相对 `panelEntry` 恒为 0，图钉会全挤到顶部。
   3. **图钉挂进 `panelEntry`（行的同级），不再挂 `nav`**：其它插件（如 dsh-todo 的番茄倒计时）会扫描面板行的**兄弟节点**里绝对定位的浮层，把它的左缘当作行右端占用来自动让位。挂 `nav` 时图钉只是 `panelEntry` 的兄弟、行插件量不到，倒计时就和图钉重叠（截图为证）。挂进 `panelEntry` 后 `top` 相对 `panelEntry`（`(offsetHeight-20)/2`），旧版侧栏仍挂 `nav`、按 `nav` 坐标算。
 - 选择器保持 `[class*="panelRow"]` / `[class*="panelUnpin"]` 这类哈希无关写法，仍可用。
+
+## 12. 顶部插件区：移动原生 panelList（2026-11 实测）
+
+> 在 DSH 0.2.2-rc.3 客户端实测（`hHd-Xa_root` / `hHd-Xa_panelList` 等哈希与上文不同）。
+> 实现只依赖类名后缀与 `data-*`，不依赖具体哈希。
+
+- **结构**：`nav[class*="panelList"]` 是侧栏根 `[class*="_root"]` 的直接子元素；工作区树的直接子元素（`groupSection` 或容器）与它同级，且排在它后面。
+- **移动策略**：在 `nav` 前插入一个隐藏 `span[data-dsh-pin-panel-section-origin]` 作为原位锚点，然后把 `nav` 与其标题 `button[data-dsh-pin-panel-section-header]` 一起插到工作区分支之前。整份列表只有一份，不克隆。
+- **rail**：侧栏收成 56px 时 workspace 行整棵卸载，`nav` 仍挂在根下。插件区标题隐藏、`nav` 强制可见（`data-dsh-pin-panel-section-rail`），所以原生图标照常可点。
+- **失败回退**：找不到工作区分支、或 `nav` 不再是根的直接子元素时，`restorePanelSection()` 把 `nav` 插回 origin 锚点后并移除标题，保留原侧栏。
+- **高度**：展开时 `max-height: min(36vh, 360px)`（约侧栏三分之一），`overflow-y:auto` 独立滚动。
+- **状态**：`dsh-pin.panel-section.v1` = `expanded` | `collapsed`；无值时窄视口（≤720px）默认收起，否则展开。
+- **可测钩子**：`window.__dshPin.panelSectionCollapsed`；E2E 见 `test/e2e/panel-section.mjs`。
